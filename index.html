@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Weather App</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="top">
+        <h1>Weather</h1>
+        <button id="unit-btn" type="button">Show °F</button>
+      </header>
+
+      <form id="search-form">
+        <input
+          id="city"
+          type="text"
+          placeholder="Type a city, e.g. Lagos"
+          aria-label="City name"
+        />
+        <button type="submit">Search</button>
+      </form>
+      <p id="status" class="status">Search for a city to see the weather.</p>
+      <section id="current" class="current"></section>
+      <div class="controls">
+        <select id="filter" aria-label="Filter forecast days">
+          <option value="all">All days</option>
+          <option value="rain">Rainy days only</option>
+          <option value="warm">Hot days (30°C+)</option>
+        </select>
+        <select id="sort" aria-label="Sort forecast days">
+          <option value="date">Sort: by date</option>
+          <option value="hot">Sort: hottest first</option>
+          <option value="cold">Sort: coolest first</option>
+        </select>
+      </div>
+      <section id="forecast" class="forecast"></section>
+      <section class="favorites">
+        <h3>Favorites</h3>
+        <div id="favorites"></div>
+      </section>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>
