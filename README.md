@@ -2,13 +2,13 @@
 
 A simple, fast weather app that lets you search any city, view a 7-day forecast, **filter** and **sort** the forecast days, and **save favorite cities** that are still there when you come back.
 
-Built for the "Playing Around with APIs" assignment. It runs locally in a browser and is deployed on two web servers behind a load balancer.
+Built for the "Playing Around with APIs" assignment. It runs locally in a browser and is deployed on two web servers behind a load balancer, served over HTTPS.
 
 ## Links
 
-- **Live site (through the load balancer):** http://www.abdikarim.tech  (or http://LB_IP)
-- **Demo video (max 2 minutes):** PASTE_VIDEO_LINK_HERE
-- **GitHub repository:** https://github.com/YOUR_USERNAME/weather-trip-planner
+- **Live site (through the load balancer):** https://www.abdikarim.tech
+- **Demo video (max 2 minutes):https://youtu.be/PsS57QScN6U
+- **GitHub repository:** https://github.com/mohamed-code271/weather-trip-planner
 
 ## Credentials and API keys
 
@@ -52,7 +52,7 @@ You only need a web browser. There is nothing to install.
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/weather-trip-planner.git
+   git clone https://github.com/mohamed-code271/weather-trip-planner.git
    cd weather-trip-planner
    ```
 2. Open `index.html` in your browser (double-click it, or in VS Code use the Live Server extension).
@@ -66,8 +66,8 @@ The app is static (HTML, CSS and JavaScript), so each web server only needs Ngin
 
 ```
           Browser
-             |
-         lb-01 (HAProxy, roundrobin)
+             |  HTTPS (port 443)
+         lb-01 (HAProxy, roundrobin, SSL termination)
          /                \
    web-01 (Nginx)      web-02 (Nginx)
 ```
@@ -80,7 +80,7 @@ Repeat these steps on **both** servers.
    ```bash
    ssh ubuntu@WEB_IP
    ```
-2. Make sure Nginx is installed (it already is if you ran the earlier load balancer project scripts):
+2. Make sure Nginx and Git are installed:
    ```bash
    sudo apt-get update -y
    sudo apt-get install -y nginx git
@@ -103,17 +103,29 @@ To update the app later, run `git pull` inside the cloned folder and copy the th
 
 HAProxy sends each new request to the next server in turn (roundrobin).
 
-1. Connect to lb-01 and install HAProxy:
+1. Connect to lb-01 and install HAProxy and certbot:
    ```bash
    ssh ubuntu@LB_IP
    sudo apt-get update -y
-   sudo apt-get install -y haproxy
+   sudo apt-get install -y haproxy certbot
    ```
-2. Edit `/etc/haproxy/haproxy.cfg` so it contains:
+2. Get a free Let's Encrypt certificate for the domain. HAProxy must be stopped while certbot uses port 80:
+   ```bash
+   sudo service haproxy stop
+   sudo certbot certonly --standalone -d www.abdikarim.tech
+   ```
+3. HAProxy needs the certificate and the private key in one file:
+   ```bash
+   sudo mkdir -p /etc/haproxy/certs
+   sudo cp /etc/letsencrypt/live/www.abdikarim.tech/fullchain.pem /etc/haproxy/certs/www.abdikarim.tech.pem
+   sudo sh -c 'tee -a /etc/haproxy/certs/www.abdikarim.tech.pem < /etc/letsencrypt/live/www.abdikarim.tech/privkey.pem > /dev/null'
+   sudo chmod 600 /etc/haproxy/certs/www.abdikarim.tech.pem
+   ```
+4. Edit `/etc/haproxy/haproxy.cfg` so it contains:
    ```
    global
-       daemon
-       maxconn 256
+       maxconn 2048
+       tune.ssl.default-dh-param 2048
 
    defaults
        mode http
@@ -123,14 +135,21 @@ HAProxy sends each new request to the next server in turn (roundrobin).
 
    frontend http_front
        bind *:80
+       redirect scheme https code 301 if !{ ssl_fc }
+       default_backend http_back
+
+   frontend https_front
+       bind *:443 ssl crt /etc/haproxy/certs/www.abdikarim.tech.pem
+       http-request set-header X-Forwarded-Proto https
        default_backend http_back
 
    backend http_back
        balance roundrobin
-       server 7342-web-01 35.178.171.253:80 check
-       server 7342-web-02 3.10.171.138:80 check
+       server 7342-web-01 WEB01_IP:80 check
+       server 7342-web-02 WEB02_IP:80 check
    ```
-3. Check the config, then restart:
+   Replace `WEB01_IP` and `WEB02_IP` with the public IPs of the web servers. The `redirect` line sends all plain HTTP traffic to HTTPS with a 301.
+5. Check the config, then restart:
    ```bash
    sudo haproxy -c -f /etc/haproxy/haproxy.cfg
    sudo service haproxy restart
@@ -138,13 +157,19 @@ HAProxy sends each new request to the next server in turn (roundrobin).
 
 ### 3. Test the load balancer
 
-Run this several times on lb-01 or on your laptop:
+Run this several times on your laptop or on lb-01:
 
 ```bash
-curl -sI http://18.175.145.68 | grep -i x-served-by
+curl -sI https://www.abdikarim.tech | grep -i x-served-by
 ```
 
-The answer should alternate between `7342-web-01` and `7342-web-02`. That proves traffic is shared between both servers. Then open the live site in a browser and check that search, filters, sorting and favorites work.
+The answer should alternate between `7342-web-01` and `7342-web-02`. That proves traffic is shared between both servers. To test the redirect:
+
+```bash
+curl -sIL http://www.abdikarim.tech
+```
+
+It should show a `301 Moved Permanently` followed by a `200 OK`. Then open the live site in a browser and check that search, filters, sorting and favorites work.
 
 ## Challenges and how I solved them
 
@@ -153,6 +178,7 @@ The answer should alternate between `7342-web-01` and `7342-web-02`. That proves
 - **Mismatched function names.** A button called `saveFavorite` while the function was named `saveFavorites`. Matching the names fixed it.
 - **Broken image icons.** The first version loaded `.svg` files that did not exist. I replaced them with emojis, so there are no extra files to deploy.
 - **The 7-day layout.** A 5-column grid made 7 days wrap badly, so I switched to a responsive grid.
+- **Overwriting the load balancer config by mistake.** While adding HTTPS I restored an old backup over the new config. I fixed it by keeping a separate working copy of each version of `haproxy.cfg`.
 - **No API key to protect.** Choosing a keyless API (Open-Meteo) means nothing secret can end up in the public repository.
 
 ## Credits
@@ -160,6 +186,7 @@ The answer should alternate between `7342-web-01` and `7342-web-02`. That proves
 - Weather and geocoding data: [Open-Meteo](https://open-meteo.com/) (CC BY 4.0)
 - Weather icons: standard Unicode emojis
 - Learning resources: https://youtu.be/tPBOTAvf3o8
+- Free SSL certificate: [Let's Encrypt](https://letsencrypt.org/) with certbot
 - Load balancer and web server setup: from my earlier Nginx and HAProxy project
 
 ## Author
